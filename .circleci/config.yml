@@ -1,0 +1,53 @@
+version: 2.1
+
+executors:
+  default:
+    working_directory: /go/src/github.com/yanolab/atomicop
+    docker:
+      - image: circleci/golang:1.12-stretch
+    environment:
+      GO111MODULE: "on"
+
+commands:
+  restore_pkg_cache:
+    steps:
+      - restore_cache:
+          keys:
+            - v1-pkg-cache-{{ checksum "go.sum" }}
+            - v1-pkg-cache-
+
+jobs:
+  review:
+    executor:
+      name: default
+    environment:
+    steps:
+      - checkout
+      - restore_pkg_cache
+      - run:
+          name: Setup reviewdog
+          command: |
+            curl -sfL https://raw.githubusercontent.com/reviewdog/reviewdog/master/install.sh| sh -s -- -b $(go env GOPATH)/bin
+            GO111MODULE=off go get -u github.com/golangci/golangci-lint/cmd/golangci-lint
+      - run:
+          name: review
+          command: reviewdog -reporter=github-pr-review -diff="git diff master"
+  test:
+    executor:
+      name: default
+    steps:
+      - checkout
+      - restore_pkg_cache
+      - run:
+          name: test
+          command: go test -v -race ./...
+
+workflows:
+  review-and-test:
+    jobs:
+      - reivew:
+          filters: &default_filter
+            branches:
+              only: /.*/
+      - test:
+          filters: *default_filter
