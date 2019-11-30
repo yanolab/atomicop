@@ -7,6 +7,18 @@ executors:
       - image: circleci/golang:1.12-stretch
     environment:
       GO111MODULE: "on"
+  test:
+    working_directory: /go/src/github.com/yanolab/atomicop
+    docker:
+      - image: circleci/golang:1.12-stretch
+      - image: mysql:5.7
+        environment:
+          MYSQL_DATABASE: atomicop
+          MYSQL_ROOT_PASSWORD: pass
+          MYSQL_ROOT_HOST: ""
+        command: mysqld --character-set-server=utf8mb4 --collation-server=utf8mb4_bin
+    environment:
+      GO111MODULE: "on"
 
 commands:
   restore_pkg_cache:
@@ -20,7 +32,6 @@ jobs:
   review:
     executor:
       name: default
-    environment:
     steps:
       - checkout
       - restore_pkg_cache
@@ -34,18 +45,28 @@ jobs:
           command: reviewdog -reporter=github-pr-review -diff="git diff master"
   test:
     executor:
-      name: default
+      name: test
     steps:
       - checkout
       - restore_pkg_cache
       - run:
+          name: Install dockerize
+          command: wget https://github.com/jwilder/dockerize/releases/download/$DOCKERIZE_VERSION/dockerize-linux-amd64-$DOCKERIZE_VERSION.tar.gz && sudo tar -C /usr/local/bin -xzvf dockerize-linux-amd64-$DOCKERIZE_VERSION.tar.gz && rm dockerize-linux-amd64-$DOCKERIZE_VERSION.tar.gz
+          environment:
+            DOCKERIZE_VERSION: v0.6.1
+      - run:
+          name: Wait for DB
+          command: dockerize -wait tcp://127.0.0.1:3306 -timeout 3m
+      - run:
           name: test
-          command: go test -v -race ./...
+          command: |
+            go run docker/init.go
+            go test -v -race ./...
 
 workflows:
   review-and-test:
     jobs:
-      - reivew:
+      - review:
           filters: &default_filter
             branches:
               only: /.*/
